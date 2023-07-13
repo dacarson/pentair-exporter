@@ -1,15 +1,17 @@
+#/usr/bin/python3
+
 import asyncio
 import logging
 import argparse
 import json
 import time
+import copy
 from pprint import pprint
 
 from screenlogicpy import ScreenLogicGateway, discovery
-from screenlogicpy.const import CODE, BODY_TYPE
 
 """
-usage: pentair-exporter.py [-h] 
+usage: pentair-exporter.py [-h] [-r] [-d]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -45,11 +47,19 @@ def influxdb_publish(event, data):
                                 username=args.influxdb_user,
                                 password=args.influxdb_pass,
                                 database=args.influxdb_db)
+
+#remove second level JSON objects        
+        clean_data = copy.deepcopy(data)
+
+        clean_data['enum_options'] = ''
+        clean_data['configuration'] = ''
+        clean_data['color'] = ''
+
         payload = {}
         payload['measurement'] = event
 
         payload['time']   = int(time.time())
-        payload['fields'] = data
+        payload['fields'] = clean_data
 
         if args.verbose:
             print ("publishing %s to influxdb [%s:%s]: %s" % (event,args.influxdb_host, args.influxdb_port, payload))
@@ -63,6 +73,8 @@ def influxdb_publish(event, data):
 
 #----------------
 def publish_pentair_data(gateway):
+    from screenlogicpy.device_const.system import BODY_TYPE 
+
     cur_data = gateway.get_data()
     if args.verbose:
         print("Publishing data")
@@ -71,29 +83,31 @@ def publish_pentair_data(gateway):
         pprint(cur_data)
 
     if args.influxdb:
-        influxdb_publish('pool_last_temperature', cur_data['bodies'][BODY_TYPE.POOL]['last_temperature'])
-        influxdb_publish('pool_heat_mode', cur_data['bodies'][BODY_TYPE.POOL]['heat_mode'])
-        influxdb_publish('pool_heat_status', cur_data['bodies'][BODY_TYPE.POOL]['heat_status'])
-        influxdb_publish('pool_heat_set_point', cur_data['bodies'][BODY_TYPE.POOL]['heat_set_point'])
-        influxdb_publish('pool_cool_set_point', cur_data['bodies'][BODY_TYPE.POOL]['cool_set_point'])
-        influxdb_publish('spa_last_temperature', cur_data['bodies'][BODY_TYPE.SPA]['last_temperature'])
-        influxdb_publish('spa_heat_mode', cur_data['bodies'][BODY_TYPE.SPA]['heat_mode'])
-        influxdb_publish('spa_heat_status', cur_data['bodies'][BODY_TYPE.SPA]['heat_status'])
-        influxdb_publish('spa_heat_set_point', cur_data['bodies'][BODY_TYPE.SPA]['heat_set_point'])
-        influxdb_publish('spa_cool_set_point', cur_data['bodies'][BODY_TYPE.SPA]['cool_set_point'])
-        influxdb_publish('pump_currentGPM', cur_data['pumps'][0]['currentGPM'])
-        influxdb_publish('pump_currentRPM', cur_data['pumps'][0]['currentRPM'])
-        influxdb_publish('pump_currentWatts', cur_data['pumps'][0]['currentWatts'])
-        influxdb_publish('circuit_pool', cur_data['circuits'][505])
-        influxdb_publish('circuit_spa', cur_data['circuits'][500])
-        influxdb_publish('circuit_pool_light', cur_data['circuits'][501])
-        influxdb_publish('circuit_spa_light', cur_data['circuits'][502])
-        influxdb_publish('air_temperature', cur_data['sensors']['air_temperature'])
-        influxdb_publish('salt_ppm', cur_data['sensors']['salt_ppm'])
+        influxdb_publish('pool_last_temperature', cur_data['body'][BODY_TYPE.POOL]['last_temperature'])
+        influxdb_publish('pool_heat_mode', cur_data['body'][BODY_TYPE.POOL]['heat_mode'])
+        influxdb_publish('pool_heat_status', cur_data['body'][BODY_TYPE.POOL]['heat_state'])
+        influxdb_publish('pool_heat_set_point', cur_data['body'][BODY_TYPE.POOL]['heat_setpoint'])
+        influxdb_publish('pool_cool_set_point', cur_data['body'][BODY_TYPE.POOL]['cool_setpoint'])
+        influxdb_publish('spa_last_temperature', cur_data['body'][BODY_TYPE.SPA]['last_temperature'])
+        influxdb_publish('spa_heat_mode', cur_data['body'][BODY_TYPE.SPA]['heat_mode'])
+        influxdb_publish('spa_heat_status', cur_data['body'][BODY_TYPE.SPA]['heat_state'])
+        influxdb_publish('spa_heat_set_point', cur_data['body'][BODY_TYPE.SPA]['heat_setpoint'])
+        influxdb_publish('spa_cool_set_point', cur_data['body'][BODY_TYPE.SPA]['cool_setpoint'])
+        influxdb_publish('pump_currentGPM', cur_data['pump'][0]['gpm_now'])
+        influxdb_publish('pump_currentRPM', cur_data['pump'][0]['rpm_now'])
+        influxdb_publish('pump_currentWatts', cur_data['pump'][0]['watts_now'])
+        influxdb_publish('circuit_pool', cur_data['circuit'][505])
+        influxdb_publish('circuit_spa', cur_data['circuit'][500])
+        influxdb_publish('circuit_pool_light', cur_data['circuit'][501])
+        influxdb_publish('circuit_spa_light', cur_data['circuit'][502])
+        influxdb_publish('air_temperature', cur_data['controller']['sensor']['air_temperature'])
+        influxdb_publish('salt_ppm', cur_data['controller']['sensor']['salt_ppm'])
 
 #----------------
 
 async def main():
+    from screenlogicpy.const.msg import CODE
+
     #logging.basicConfig(
     #    format="%(asctime)s %(levelname)-8s %(message)s",
     #    level=logging.DEBUG,
@@ -191,4 +205,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-asyncio.run(main())
+while (1):
+	asyncio.run(main())
