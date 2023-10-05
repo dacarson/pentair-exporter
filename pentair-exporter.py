@@ -11,7 +11,7 @@ from pprint import pprint
 from screenlogicpy import ScreenLogicGateway, discovery
 
 """
-usage: pentair-exporter.py [-h] [-r] [-d]
+usage: pentair-exporter.py [-h] [-r] [-v]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -51,9 +51,13 @@ def influxdb_publish(event, data):
 #remove second level JSON objects        
         clean_data = copy.deepcopy(data)
 
-        clean_data['enum_options'] = ''
-        clean_data['configuration'] = ''
-        clean_data['color'] = ''
+        if "enum_options" in clean_data:
+            clean_data['enum_value'] = clean_data['enum_options'][clean_data['value']]
+            clean_data['enum_options'] = ''
+        if "configuration" in clean_data:
+            clean_data['configuration'] = ''
+        if "color" in clean_data:
+            clean_data['color'] = ''
 
         payload = {}
         payload['measurement'] = event
@@ -83,25 +87,39 @@ def publish_pentair_data(gateway):
         pprint(cur_data)
 
     if args.influxdb:
-        influxdb_publish('pool_last_temperature', cur_data['body'][BODY_TYPE.POOL]['last_temperature'])
-        influxdb_publish('pool_heat_mode', cur_data['body'][BODY_TYPE.POOL]['heat_mode'])
-        influxdb_publish('pool_heat_status', cur_data['body'][BODY_TYPE.POOL]['heat_state'])
-        influxdb_publish('pool_heat_set_point', cur_data['body'][BODY_TYPE.POOL]['heat_setpoint'])
-        influxdb_publish('pool_cool_set_point', cur_data['body'][BODY_TYPE.POOL]['cool_setpoint'])
-        influxdb_publish('spa_last_temperature', cur_data['body'][BODY_TYPE.SPA]['last_temperature'])
-        influxdb_publish('spa_heat_mode', cur_data['body'][BODY_TYPE.SPA]['heat_mode'])
-        influxdb_publish('spa_heat_status', cur_data['body'][BODY_TYPE.SPA]['heat_state'])
-        influxdb_publish('spa_heat_set_point', cur_data['body'][BODY_TYPE.SPA]['heat_setpoint'])
-        influxdb_publish('spa_cool_set_point', cur_data['body'][BODY_TYPE.SPA]['cool_setpoint'])
-        influxdb_publish('pump_currentGPM', cur_data['pump'][0]['gpm_now'])
-        influxdb_publish('pump_currentRPM', cur_data['pump'][0]['rpm_now'])
-        influxdb_publish('pump_currentWatts', cur_data['pump'][0]['watts_now'])
-        influxdb_publish('circuit_pool', cur_data['circuit'][505])
-        influxdb_publish('circuit_spa', cur_data['circuit'][500])
-        influxdb_publish('circuit_pool_light', cur_data['circuit'][501])
-        influxdb_publish('circuit_spa_light', cur_data['circuit'][502])
-        influxdb_publish('air_temperature', cur_data['controller']['sensor']['air_temperature'])
-        influxdb_publish('salt_ppm', cur_data['controller']['sensor']['salt_ppm'])
+        # Log water bodies
+        for body_num in cur_data['body']:
+            body = {}
+            name = cur_data['body'][body_num]['name']
+            body[cur_data['body'][body_num]['last_temperature']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['body'][body_num]['last_temperature']['value']
+            body[cur_data['body'][body_num]['heat_mode']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['body'][body_num]['heat_mode']['value']
+            body[cur_data['body'][body_num]['heat_state']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['body'][body_num]['heat_state']['value']
+            body[cur_data['body'][body_num]['heat_setpoint']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['body'][body_num]['heat_setpoint']['value']
+            body[cur_data['body'][body_num]['cool_setpoint']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['body'][body_num]['cool_setpoint']['value']
+            influxdb_publish(name, body)
+
+        # Log pumps
+        for pump_num in cur_data['pump']:
+            if cur_data['pump'][pump_num]['data'] != 0:
+                pump = {}
+                name = cur_data['pump'][pump_num]['state']['name'].replace(" ", "_")
+                pump[cur_data['pump'][pump_num]['gpm_now']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['pump'][pump_num]['gpm_now']['value']
+                pump[cur_data['pump'][pump_num]['rpm_now']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['pump'][pump_num]['rpm_now']['value']
+                pump[cur_data['pump'][pump_num]['watts_now']['name'].replace(" ", "_").replace(name+"_","")] = cur_data['pump'][pump_num]['watts_now']['value']
+                influxdb_publish(name, pump)
+
+        #Log sensors
+        sensors = {}
+        for sensor_name in cur_data['controller']['sensor']:
+            sensors[cur_data['controller']['sensor'][sensor_name]['name'].replace(" ", "_")] = cur_data['controller']['sensor'][sensor_name]['value']
+        influxdb_publish('Sensors', sensors)
+
+        #Log circuits
+        circuits = {}
+        for circuit_num in cur_data['circuit']:
+            if cur_data['circuit'][circuit_num]['function'] != 0:
+                circuits[cur_data['circuit'][circuit_num]['name'].replace(" ", "_")] = cur_data['circuit'][circuit_num]['value']
+        influxdb_publish('Circuits', circuits)
 
 #----------------
 
@@ -168,15 +186,6 @@ async def main():
         if args.raw:
             pprint(gateway.get_data())
 
-        try:
-            await connection_lost
-        finally:
-            data_unsub()
-            chem_unsub1()
-            if args.raw:
-                pprint(gateway.get_data())
-            await gateway.async_disconnect()
-
     else:
         print("Should never hit this. No gateways found")
 
@@ -205,5 +214,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-while (1):
-	asyncio.run(main())
+    asyncio.run(main())
