@@ -11,11 +11,12 @@ from pprint import pprint
 from screenlogicpy import ScreenLogicGateway, discovery
 
 """
-usage: pentair-exporter.py [-h] [-r] [-v]
+usage: pentair-exporter.py [-h] [-r] [-v] [--ip IP]
 
 optional arguments:
   -h, --help            show this help message and exit
   -r, --raw             print raw data to stddout
+  --ip IP               IP address of Pentair ScreenLogic unit (skips discovery)
   --influxdb            publish to influxdb
   --influxdb_host INFLUXDB_HOST
                         hostname or ip of InfluxDb HTTP API
@@ -131,15 +132,21 @@ async def main():
     #    level=logging.DEBUG,
     #    datefmt="%Y-%m-%d %H:%M:%S",
     #)
-    if args.verbose:
-        print("Looking for Pentair ScreenLogic units")
+    if args.ip:
+        if args.verbose:
+            print("Using provided IP address: " + args.ip)
+        # Create a host entry with the provided IP
+        hosts = [{"ip": args.ip, "port": 80}]
+    else:
+        if args.verbose:
+            print("Looking for Pentair ScreenLogic units")
 
-    hosts = await discovery.async_discover()
-    while len(hosts) == 0:
-        print("No Pentair ScreenLogic units found, looking again")
         hosts = await discovery.async_discover()
+        while len(hosts) == 0:
+            print("No Pentair ScreenLogic units found, looking again")
+            hosts = await discovery.async_discover()
 
-    print("Found "+str(len(hosts))+" units")
+        print("Found "+str(len(hosts))+" units")
 
     if len(hosts) > 0:
 
@@ -211,6 +218,7 @@ if __name__ == "__main__":
     parser.add_argument("--influxdb_db",   dest="influxdb_db",   action="store",      default="pentair",              help="InfluxDB database name")
 
     parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="verbose mode - show threads")
+    parser.add_argument("--ip", dest="ip", action="store", help="IP address of Pentair ScreenLogic unit (skips discovery)")
 
     args = parser.parse_args()
 
